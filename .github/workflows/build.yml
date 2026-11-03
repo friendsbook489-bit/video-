@@ -7,10 +7,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Unzip project
+        shell: bash
         run: |
-          unzip -q *.zip -d project
-          DIR=$(dirname "$(find project -name settings.gradle.kts | head -n 1)")
-          echo "DIR=$DIR" >> $GITHUB_ENV
+          ls -la
+          unzip -q MedulDownloader.zip -d project
+          SETTINGS=$(find project -name "settings.gradle.kts" | head -n 1)
+          echo "Found: $SETTINGS"
+          echo "DIR=$(dirname "$SETTINGS")" >> $GITHUB_ENV
 
       - uses: actions/setup-java@v4
         with:
@@ -19,13 +22,28 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
+      - name: Install SDK parts
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
       - name: Build APK
+        shell: bash
         working-directory: ${{ env.DIR }}
-        run: gradle assembleDebug
+        run: gradle assembleDebug --stacktrace 2>&1 | tee build-log.txt
+
+      - name: Save log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ env.DIR }}/build-log.txt
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         with:
