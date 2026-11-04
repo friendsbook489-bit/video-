@@ -1,19 +1,27 @@
 name: Build APK from ZIP
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
       - name: Unzip project
         shell: bash
         run: |
-          ls -la
-          unzip -q MedulDownloader.zip -d project
+          ZIP=$(ls *.zip 2>/dev/null | head -n 1)
+          echo "ZIP file: $ZIP"
+          [ -z "$ZIP" ] && { echo "::error::repository তে কোনো .zip ফাইল নেই"; exit 1; }
+          mkdir -p project
+          unzip -q -o "$ZIP" -d project
           SETTINGS=$(find project -name "settings.gradle.kts" | head -n 1)
-          echo "Found: $SETTINGS"
-          echo "DIR=$(dirname "$SETTINGS")" >> $GITHUB_ENV
+          [ -z "$SETTINGS" ] && { echo "::error::জিপের ভেতরে settings.gradle.kts পাওয়া যায়নি"; find project | head -50; exit 1; }
+          echo "DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -21,12 +29,8 @@ jobs:
           java-version: 17
 
       - uses: android-actions/setup-android@v3
-
-      - name: Install SDK parts
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        with:
+          packages: "platforms;android-34 build-tools;34.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -35,9 +39,11 @@ jobs:
       - name: Build APK
         shell: bash
         working-directory: ${{ env.DIR }}
-        run: gradle assembleDebug --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
-      - name: Save log
+      - name: Save build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -45,7 +51,8 @@ jobs:
           path: ${{ env.DIR }}/build-log.txt
           if-no-files-found: ignore
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: MedulDownloader-apk
+          name: MedulDownloader-APK
           path: ${{ env.DIR }}/app/build/outputs/apk/debug/*.apk
